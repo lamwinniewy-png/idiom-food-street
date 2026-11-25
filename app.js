@@ -137,7 +137,7 @@ function setTab(t) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('is-on', b.dataset.tab === t));
   document.body.classList.remove('in-lesson');
   window.scrollTo(0, 0);
-  ({ street, search, book, closet })[t]();
+  ({ street, search, mix: mixHome, book, closet })[t]();
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 document.addEventListener('click', e => { const p = e.target.closest('[data-play]'); if (p) play(p.dataset.play, p); });
@@ -166,7 +166,7 @@ function street() {
     <div class="hero-copy"><svg class="bow" aria-hidden="true"><use href="#bow"/></svg><span class="eyebrow">三年級・130 個成語</span><h1>成語<br>美食街</h1>
     <p>每星期開一間新店，每日煮一道成語菜式！</p></div></section>
   <div class="strip"><b>${allDone()} / ${C.all.length}</b><div class="bar"><i style="width:${allDone() / C.all.length * 100}%"></i></div><span class="stars">★ ${allStars()}</span></div>
-  <div class="quick"><button class="qbtn" id="goSearch">${svg('star')}找成語</button><div class="wearing mini"><img src="img/${wo.img}.webp" alt=""><div><b>今日造型：${wo.name}</b><div class="mut">去「衣櫃」幫佢哋換衫</div></div></div></div>
+  <div class="quick"><div class="qcol"><button class="qbtn" id="goSearch">${svg('star')}找成語</button><button class="qbtn qmix" id="goMix">${svg('heart')}總溫習</button></div><div class="wearing mini"><img src="img/${wo.img}.webp" alt=""><div><b>今日造型：${wo.name}</b><div class="mut">去「衣櫃」幫佢哋換衫</div></div></div></div>
   <h2 class="sec">${svg('cupcake')}已開張嘅店 <small>點入去學成語</small></h2>
   <div class="shops">${open}</div>
   ${future.length ? `<h2 class="sec">${svg('berry')}即將開張 <small>仲有 ${C.totalWeeks - C.weeks.length} 間店</small></h2>
@@ -174,6 +174,7 @@ function street() {
   <div class="parent">家長區：已完成 ${allDone()} / ${C.all.length} 個成語。<button class="pbtn" id="pcodeBtn">${svg('heart')}進度碼（換機用）</button><button id="reset">重新開始</button></div>`;
   app.querySelectorAll('[data-w]').forEach(b => b.onclick = () => shop(+b.dataset.w));
   $('#goSearch').onclick = () => setTab('search');
+  $('#goMix').onclick = () => setTab('mix');
   $('#pcodeBtn').onclick = progressBox;
   $('#reset').onclick = () => confirmBox('重新開始？', '所有食譜卡同衣服都會清除。', () => { S = fresh(); save(); street(); });
 }
@@ -402,6 +403,106 @@ function weekDone(w) {
   $('#st').onclick = () => setTab('street');
 }
 
+/* ---------- 總溫習 (mixed quiz across all idioms) ---------- */
+const allIt = () => C.weeks.flatMap(w => w.idioms);
+const fillOf = id => { for (const w of C.weeks) { const i = w.idioms.find(x => x.id === id); if (i) return (w.review.fill || []).find(f => f.a === i.idiom); } };
+const pick = (arr, n, not = []) => shuffle(arr.filter(x => !not.includes(x))).slice(0, n);
+const keyHl = it => [...it.idiom].map((c, i) => i === it.key[0] ? `<span class="kred">${c}</span>` : c).join('');
+let mixPool = 'all', mixN = 10;
+const MIX_TYPES = { mean: '揀意思', rev: '揀成語', fill: '填充', key: '紅色字', use: '揀句子' };
+function makeQ(it) {
+  const others = allIt().filter(x => x.id !== it.id);
+  const types = ['mean', 'rev', 'key', 'use'];
+  if (fillOf(it.id)) types.push('fill', 'fill');
+  const t = types[Math.floor(Math.random() * types.length)];
+  if (t === 'mean') { const o = shuffle([it.meaning, ...pick(others, 2).map(x => x.meaning)]); return { t, it, q: `「${it.idiom}」是甚麼意思？`, opts: o, a: o.indexOf(it.meaning), audio: it.id + '_name' }; }
+  if (t === 'rev') { const o = shuffle([it.idiom, ...pick(others, 2).map(x => x.idiom)]); return { t, it, q: `哪一個成語的意思是：${it.meaning}`, opts: o, a: o.indexOf(it.idiom), big: true }; }
+  if (t === 'fill') { const f = fillOf(it.id); const o = shuffle([it.idiom, ...pick(others, 2).map(x => x.idiom)]); return { t, it, q: f.q.replace('＿＿＿＿', '<span class="blank">　</span>'), opts: o, a: o.indexOf(it.idiom), big: true, fill: true }; }
+  if (t === 'key') {
+    const pool = [...new Set(others.map(x => x.key[1]))].filter(c => !it.idiom.includes(c));
+    const o = shuffle([it.key[1], ...pick(pool, 2)]);
+    const shown = [...it.idiom].map((c, i) => i === it.key[0] ? '<span class="kblank">？</span>' : c).join('');
+    return { t, it, q: `<span class="kq">${shown}</span><br>「？」應該係邊個紅色字？`, opts: o, a: o.indexOf(it.key[1]), big: true, audio: it.id + '_name' };
+  }
+  const uq = it.quiz[it.quiz.length - 1];
+  return { t, it, q: `「${it.idiom}」：${uq.q}`, opts: uq.opts, a: uq.a };
+}
+function mixHome() {
+  returnTo = () => setTab('mix');
+  document.body.classList.remove('in-lesson');
+  S.mix = S.mix || { best: 0, plays: 0 }; S.miss = S.miss || {};
+  const learned = allIt().filter(i => S.done[i.id]).length, missN = Object.keys(S.miss).length;
+  const pools = [['all', `全部 ${allIt().length} 個`, true], ['learned', `已學嘅 ${learned} 個`, learned > 0], ['miss', `錯題簿 ${missN} 個`, missN > 0]];
+  if (!pools.find(p => p[0] === mixPool)[2]) mixPool = 'all';
+  app.innerHTML = `<h2 class="sec" style="margin-top:30px">${svg('star')}總溫習 <small>130 個成語混合小測驗</small></h2>
+    <section class="card mixcard"><img class="mixpic" src="img/cover26.webp" alt="Susu、波波同 Neko 一齊溫習">
+      <div class="mixset"><p>每一題都係隨機抽出嚟，有五款題目：${Object.values(MIX_TYPES).join('、')}。答錯嘅成語會自動放入「錯題簿」，下次可以再練。</p>
+      <div class="mixlab">揀範圍</div><div class="filters wrap">${pools.map(([k, l, ok]) => `<button class="fchip ${k === mixPool ? 'on' : ''}" data-pool="${k}" ${ok ? '' : 'disabled'}>${l}</button>`).join('')}</div>
+      <div class="mixlab">題目數量</div><div class="filters wrap">${[10, 20, 30].map(n => `<button class="fchip ${n === mixN ? 'on' : ''}" data-n="${n}">${n} 題</button>`).join('')}</div>
+      <div class="mixbest">最高分：${S.mix.best}%・已經玩咗 ${S.mix.plays} 次</div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn btn-main" id="mixGo">開始總溫習 ▶</button></div></div></section>`;
+  app.querySelectorAll('[data-pool]').forEach(b => b.onclick = () => { mixPool = b.dataset.pool; mixHome(); });
+  app.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { mixN = +b.dataset.n; mixHome(); });
+  $('#mixGo').onclick = () => mixStart();
+}
+function mixStart(list) {
+  let src = list || (mixPool === 'learned' ? allIt().filter(i => S.done[i.id]) : mixPool === 'miss' ? allIt().filter(i => S.miss[i.id]) : allIt());
+  src = shuffle(src); const qs = [];
+  while (qs.length < Math.min(mixN, list ? src.length : mixN)) qs.push(makeQ(src[qs.length % src.length]));
+  mixQ(qs, 0, 0, []);
+}
+function mixQ(qs, qi, score, wrong) {
+  const q = qs[qi];
+  document.body.classList.add('in-lesson'); window.scrollTo(0, 0);
+  app.innerHTML = `<div class="lhead">${backBtn}<div class="ltitle"><div class="k">總溫習</div><div class="s">第 ${qi + 1} 題 / 共 ${qs.length} 題・答啱 ${score} 題</div></div></div>
+    <div class="bar mixbar"><i style="width:${qi / qs.length * 100}%"></i></div>
+    <section class="card"><div class="stage-label"><span class="n">${qi + 1}</span>${MIX_TYPES[q.t]}</div>
+    <div class="${q.fill ? 'fillq' : 'q'}">${q.q} ${q.audio ? playBtn(q.audio, '聽成語') : ''}</div>
+    <div class="opts">${q.opts.map((o, i) => `<button class="opt ${q.big ? 'kai' : ''}" data-i="${i}"><span class="l">${'ABC'[i]}</span>${o}</button>`).join('')}</div>
+    <div id="fb"></div>
+    <div class="actions"><button class="btn btn-main" id="nx" hidden>${qi + 1 < qs.length ? '下一題 ▶' : '睇成績 ▶'}</button></div></section>`;
+  $('#back').onclick = () => confirmBox('離開總溫習？', '今次嘅答案唔會計分。', () => setTab('mix'));
+  let answered = false, ok = false;
+  app.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+    if (answered) return; answered = true;
+    const i = +b.dataset.i; ok = i === q.a;
+    app.querySelectorAll('.opt').forEach(x => { x.disabled = true; if (+x.dataset.i === q.a) x.classList.add('right'); });
+    if (!ok) b.classList.add('wrong');
+    if (q.fill) $('.blank').textContent = q.it.idiom;
+    S.miss = S.miss || {};
+    if (ok) { delete S.miss[q.it.id]; play(score % 2 ? 'ok2' : 'ok1'); } else { S.miss[q.it.id] = (S.miss[q.it.id] || 0) + 1; play('no'); }
+    save();
+    $('#fb').innerHTML = `<div class="mixfb ${ok ? 'good' : 'bad'}"><b>${ok ? '答啱喇' : '唔緊要，記住呢個'}</b>
+      <div class="mixfb-k">${keyHl(q.it)} ${playBtn(q.it.id + '_name', '聽成語')}</div><div>${q.it.meaning}</div>
+      ${q.t === 'key' ? `<div class="keynote" style="margin-top:8px">${q.it.key[2]}</div>` : ''}</div>`;
+    $('#nx').hidden = false;
+  });
+  $('#nx').onclick = () => {
+    const s = score + (ok ? 1 : 0), wr = ok ? wrong : [...wrong, q.it];
+    if (qi + 1 < qs.length) mixQ(qs, qi + 1, s, wr); else mixEnd(qs, s, wr);
+  };
+}
+function mixEnd(qs, score, wrong) {
+  const pct = Math.round(score / qs.length * 100);
+  S.mix = S.mix || { best: 0, plays: 0 }; const newBest = pct > S.mix.best;
+  S.mix.best = Math.max(S.mix.best, pct); S.mix.plays++; save();
+  const stars = pct >= 90 ? 3 : pct >= 60 ? 2 : 1;
+  const msg = stars === 3 ? '好犀利，你係成語小博士！' : stars === 2 ? '做得好好，再練多次就更叻！' : '唔緊要，慢慢練一定會進步！';
+  const uniq = [...new Map(wrong.map(i => [i.id, i])).values()];
+  document.body.classList.add('in-lesson'); window.scrollTo(0, 0);
+  app.innerHTML = `<div class="recipe celebrate"><svg class="bow" aria-hidden="true"><use href="#bow"/></svg>${newBest ? '<span class="stamp">新紀錄</span>' : ''}
+    <div class="rd">總溫習成績</div><div class="rk">${score} / ${qs.length}</div><div class="rs">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
+    <img src="img/reward26.webp" alt="" style="aspect-ratio:1"><div class="rm">${msg}</div>
+    ${uniq.length ? `<div class="mixwrong"><div class="mixlab">要再溫嘅成語</div>${uniq.map(i => `<button class="chip" data-les="${i.id}">${i.idiom}</button>`).join('')}</div>` : ''}</div>
+    <div class="actions" style="justify-content:center"><button class="btn btn-soft" id="mh">返總溫習</button>
+    ${uniq.length ? '<button class="btn btn-soft" id="mw">再練錯咗嘅</button>' : ''}<button class="btn btn-main" id="ma">再玩一次 ▶</button></div>`;
+  if (stars >= 2) confetti(); play(stars >= 2 ? 'done' : 'ok1');
+  $('#mh').onclick = () => setTab('mix');
+  $('#ma').onclick = () => mixStart();
+  if (uniq.length) $('#mw').onclick = () => mixStart(uniq);
+  app.querySelectorAll('[data-les]').forEach(b => b.onclick = () => { const [w, i] = findLesson(b.dataset.les); returnTo = () => setTab('mix'); lesson(w, i, 2); });
+}
+
 /* ---------- recipe book ---------- */
 function book() {
   returnTo = () => setTab('book');
@@ -411,7 +512,7 @@ function book() {
       : `<div class="rc empty">未煮<br>${it.day}</div>`).join('')}</div>`).join('');
   app.innerHTML = `<h2 class="sec" style="margin-top:30px">${svg('berry')}我的食譜卡 <small>收集咗 ${allDone()} / ${C.all.length} 張</small></h2>
     ${sections}
-    <div class="book" style="margin-top:16px"><div class="rc more">仲有 ${C.all.length - C.weeks.length * 5} 道菜<br>陸續推出</div></div>
+    ${C.all.length > C.weeks.length * 5 ? `<div class="book" style="margin-top:16px"><div class="rc more">仲有 ${C.all.length - C.weeks.length * 5} 道菜<br>陸續推出</div></div>` : ''}
     <p style="margin-top:16px;color:var(--ink-2);font-size:15px">點食譜卡可以再聽一次成語。兩粒星＝挑戰題一次就答啱。</p>`;
 }
 
