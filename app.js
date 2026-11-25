@@ -169,8 +169,8 @@ function street() {
   <div class="quick"><button class="qbtn" id="goSearch">${svg('star')}找成語</button><div class="wearing mini"><img src="img/${wo.img}.webp" alt=""><div><b>今日造型：${wo.name}</b><div class="mut">去「衣櫃」幫佢哋換衫</div></div></div></div>
   <h2 class="sec">${svg('cupcake')}已開張嘅店 <small>點入去學成語</small></h2>
   <div class="shops">${open}</div>
-  <h2 class="sec">${svg('berry')}即將開張 <small>仲有 ${C.totalWeeks - C.weeks.length} 間店</small></h2>
-  <div class="soons">${future.join('')}</div>
+  ${future.length ? `<h2 class="sec">${svg('berry')}即將開張 <small>仲有 ${C.totalWeeks - C.weeks.length} 間店</small></h2>
+  <div class="soons">${future.join('')}</div>` : ''}
   <div class="parent">家長區：已完成 ${allDone()} / ${C.all.length} 個成語。<button class="pbtn" id="pcodeBtn">${svg('heart')}進度碼（換機用）</button><button id="reset">重新開始</button></div>`;
   app.querySelectorAll('[data-w]').forEach(b => b.onclick = () => shop(+b.dataset.w));
   $('#goSearch').onclick = () => setTab('search');
