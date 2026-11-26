@@ -171,10 +171,11 @@ function street() {
   <div class="shops">${open}</div>
   ${future.length ? `<h2 class="sec">${svg('berry')}即將開張 <small>仲有 ${C.totalWeeks - C.weeks.length} 間店</small></h2>
   <div class="soons">${future.join('')}</div>` : ''}
-  <div class="parent">家長區：已完成 ${allDone()} / ${C.all.length} 個成語。<button class="pbtn" id="pcodeBtn">${svg('heart')}進度碼（換機用）</button><button id="reset">重新開始</button></div>`;
+  <div class="parent">家長區：已完成 ${allDone()} / ${C.all.length} 個成語。<button class="pbtn" id="certBtn">${svg('star')}列印證書</button><button class="pbtn" id="pcodeBtn">${svg('heart')}進度碼（換機用）</button><button id="reset">重新開始</button></div>`;
   app.querySelectorAll('[data-w]').forEach(b => b.onclick = () => shop(+b.dataset.w));
   $('#goSearch').onclick = () => setTab('search');
   $('#goMix').onclick = () => setTab('mix');
+  $('#certBtn').onclick = () => cert(() => setTab('street'));
   $('#pcodeBtn').onclick = progressBox;
   $('#reset').onclick = () => confirmBox('重新開始？', '所有食譜卡同衣服都會清除。', () => { S = fresh(); save(); street(); });
 }
@@ -397,9 +398,10 @@ function weekDone(w) {
   app.innerHTML = `<div class="recipe celebrate" style="border-color:var(--lilac)"><svg class="bow" aria-hidden="true"><use href="#bow"/></svg><span class="stamp" style="background:var(--lilac);box-shadow:0 0 0 3px var(--lilac)">解鎖新衫</span>
     <div class="rd" style="color:var(--lilac-d)">第${CN[w.n]}星期完成</div><div class="rk" style="font-size:40px">${w.reward.name}</div>
     <img src="img/${w.reward.img}.webp" alt="Susu、波波同 Neko 著住${w.reward.name}" style="aspect-ratio:1"><div class="rm">你已經學識 ${w.idioms.length} 個新成語，佢哋換上新衫多謝你！</div></div>
-    <div class="actions" style="justify-content:center"><button class="btn btn-soft" id="st">返美食街</button><button class="btn btn-main" id="cl">去衣櫃睇吓 ▶</button></div>`;
+    <div class="actions" style="justify-content:center"><button class="btn btn-soft" id="st">返美食街</button><button class="btn btn-main" id="cl">去衣櫃睇吓 ▶</button>${w.n === C.totalWeeks && allDone() >= C.all.length ? '<button class="btn btn-main" id="gc">領取畢業證書 ▶</button>' : ''}</div>`;
   confetti(); play(w.n === 1 ? 'week' : 'week' + w.n);
   $('#cl').onclick = () => setTab('closet');
+  if ($('#gc')) $('#gc').onclick = () => cert(() => setTab('street'));
   $('#st').onclick = () => setTab('street');
 }
 
@@ -440,7 +442,8 @@ function mixHome() {
       <div class="mixlab">揀範圍</div><div class="filters wrap">${pools.map(([k, l, ok]) => `<button class="fchip ${k === mixPool ? 'on' : ''}" data-pool="${k}" ${ok ? '' : 'disabled'}>${l}</button>`).join('')}</div>
       <div class="mixlab">題目數量</div><div class="filters wrap">${[10, 20, 30].map(n => `<button class="fchip ${n === mixN ? 'on' : ''}" data-n="${n}">${n} 題</button>`).join('')}</div>
       <div class="mixbest">最高分：${S.mix.best}%・已經玩咗 ${S.mix.plays} 次</div>
-      <div class="actions" style="justify-content:flex-start"><button class="btn btn-main" id="mixGo">開始總溫習 ▶</button></div></div></section>`;
+      <div class="actions" style="justify-content:flex-start"><button class="btn btn-main" id="mixGo">開始總溫習 ▶</button><button class="btn btn-soft" id="goCert">${allDone() >= C.all.length ? '列印畢業證書' : '列印學習獎狀'}</button></div></div></section>`;
+  $('#goCert').onclick = () => cert();
   app.querySelectorAll('[data-pool]').forEach(b => b.onclick = () => { mixPool = b.dataset.pool; mixHome(); });
   app.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { mixN = +b.dataset.n; mixHome(); });
   $('#mixGo').onclick = () => mixStart();
@@ -501,6 +504,59 @@ function mixEnd(qs, score, wrong) {
   $('#ma').onclick = () => mixStart();
   if (uniq.length) $('#mw').onclick = () => mixStart(uniq);
   app.querySelectorAll('[data-les]').forEach(b => b.onclick = () => { const [w, i] = findLesson(b.dataset.les); returnTo = () => setTab('mix'); lesson(w, i, 2); });
+}
+
+/* ---------- printable graduation certificate (name stays on this device) ---------- */
+const CND = '〇一二三四五六七八九';
+const cnYear = y => String(y).split('').map(d => CND[d]).join('');
+const cnNum = n => n <= 10 ? CN[n] : n < 20 ? '十' + (n % 10 ? CND[n % 10] : '') : CND[Math.floor(n / 10)] + '十' + (n % 10 ? CND[n % 10] : '');
+const cnDate = (d = new Date()) => `${cnYear(d.getFullYear())}年${cnNum(d.getMonth() + 1)}月${cnNum(d.getDate())}日`;
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function cert(back = () => setTab('mix')) {
+  returnTo = back;
+  document.body.classList.add('in-lesson'); window.scrollTo(0, 0);
+  const done = allDone(), total = C.all.length, full = done >= total;
+  const name = S.certName || '', date = S.certDate || cnDate();
+  const best = (S.mix && S.mix.best) || 0;
+  const title = full ? '畢業證書' : '學習獎狀';
+  const body = full
+    ? `完成「成語美食街」全部二十六間店，學識一百三十個成語，努力認真，表現優異，成為<b>成語小博士</b>。`
+    : `喺「成語美食街」用心學習，已經學識&nbsp;<b>${done}</b>&nbsp;個成語，繼續努力，向成語小博士進發。`;
+  app.innerHTML = `<div class="certctl">
+    <div class="lhead">${backBtn}<div class="ltitle"><div class="k">${title}</div><div class="s">打好名就可以列印，A4 橫向</div></div></div>
+    ${full ? '' : `<div class="tipbox">而家學識咗 ${done} / ${total} 個成語，所以會印成「學習獎狀」。學晒 130 個成語，就會變成「畢業證書」。</div>`}
+    <div class="certform"><label>小朋友名字<input id="cn" maxlength="12" value="${esc(name)}" placeholder="例如：陳小美" autocomplete="off"></label>
+    <label>日期<input id="cd" maxlength="20" value="${esc(date)}"></label>
+    <button class="btn btn-main" id="cp">列印證書</button></div>
+    <p class="mut">名字只會儲喺呢部機，唔會傳上網。列印時請揀「橫向」，並開啟「背景圖形」，顏色會更靚。</p></div>
+  <div class="certwrap"><div class="cert" id="cert">
+    <div class="cert-in">
+      ${stk('heart', 'width:54px;top:26px;left:30px')}${stk('star', 'width:58px;top:24px;right:34px')}${stk('berry', 'width:46px;top:46%;left:22px')}${stk('heart', 'width:40px;top:58%;right:22px')}
+      <div class="cert-main">
+        <svg class="cert-bow" aria-hidden="true"><use href="#bow"/></svg>
+        <div class="cert-eyebrow">成語美食街</div>
+        <h1 class="cert-title">${full ? '成語小博士' : '成語小廚師'}<span>${title}</span></h1>
+        <div class="cert-to">茲證明</div>
+        <div class="cert-name" id="cnOut">${esc(name) || '　'}</div>
+        <div class="cert-to">小朋友</div>
+        <p class="cert-body">${body}</p>
+        <div class="cert-stats"><span>${done} 個成語</span><span>★ ${allStars()} 粒星</span>${best ? `<span>總溫習最高分 ${best}%</span>` : ''}</div>
+      </div>
+      <div class="cert-side">
+        <div class="cert-photo"><img src="img/${full ? 'reward26' : wornImg().img}.webp" alt=""></div>
+        <div class="cert-seal"><span>成語</span><span>美食街</span></div>
+      </div>
+      <div class="cert-foot">
+        ${[['susu', 'Susu'], ['bobo', '波波'], ['neko', 'Neko']].map(([k, n]) => `<div class="cert-sign"><img src="img/f_${k}.webp" alt=""><div><b>${n}</b><small>店長</small></div></div>`).join('')}
+        <div class="cert-date"><small>頒發日期</small><b id="cdOut">${esc(date)}</b></div>
+      </div>
+    </div></div></div>`;
+  const fit = () => { const w = $('.certwrap'); if (!w) return; const s = Math.min(1, w.clientWidth / 1123); $('#cert').style.transform = `scale(${s})`; w.style.height = 794 * s + 'px'; };
+  fit(); window.addEventListener('resize', fit);
+  $('#cn').oninput = e => { S.certName = e.target.value.trim(); save(); $('#cnOut').textContent = S.certName || '　'; };
+  $('#cd').oninput = e => { S.certDate = e.target.value.trim(); save(); $('#cdOut').textContent = S.certDate; };
+  $('#cp').onclick = () => { if (!S.certName) { toast('記得先打小朋友名字'); $('#cn').focus(); return; } window.print(); };
+  $('#back').onclick = () => { window.removeEventListener('resize', fit); returnTo(); };
 }
 
 /* ---------- recipe book ---------- */
